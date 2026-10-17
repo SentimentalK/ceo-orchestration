@@ -36,7 +36,7 @@
 ## Worker 派发
 
 - Spec 必须满足 [`contracts/task-spec.md`](contracts/task-spec.md)。注入正文使用 [`templates/worker-prompt.md`](templates/worker-prompt.md)。
-- 按任务复杂度和成本选择 Coding、Research 或 Review Agent。只使用调用者授权且本机真实可用的 Agent。不要把某次会话的模型、订阅或机器配置当成通用前提。
+- 按任务复杂度和成本选择 Coding、Research 或 Review Agent。只使用调用者授权且本机真实可用的 Agent。不要把某次会话的模型、订阅或机器配置当成通用前提。本机候选与优先级用 `grep` 查 [`models.md`](models.md)，与实时列表冲突时以实时列表为准。
 - 调用者精确指定模型时，不得暗中更换 Agent 或模型。官方手册不允许在该放置上覆盖模型时，改用不改变模型的已支持放置，或停止并报告。不要换成未授权 Agent 冒充。
 - 未指定模型时，省略模型参数，让 Worker 继承该 Agent 的既有配置。只有该模型支持时才传 effort。
 - 启动收据返回后，核对请求身份和生效身份。只凭请求参数，不得声称目标模型已经运行。
