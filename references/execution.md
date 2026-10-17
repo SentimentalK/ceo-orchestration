@@ -1,6 +1,6 @@
 # 执行、编排与恢复
 
-只在创建 Run/Task、判断并行、放置 Worktree、选择模型、处理额度或未知状态、返工、更新 Ticket、核验 Git/CI 时读取本文件。命令和字段以本机已安装的 orchestration 紧凑手册为准；命中 `SKILL.md` 的官方动作门禁时，再加载那一个官方 Reference。
+只在创建 Run/Task、判断并行、放置 Worktree、选择模型、处理额度或未知状态、返工、更新 Ticket、核验 Git/CI 时读取本文件。命令和字段以本机已安装的 orchestration 紧凑手册为准；命中 `AGENT.md` 的官方动作门禁时，再加载那一个官方 Reference。
 
 本文件不复制命令手册。这里的策略比 Orca 安全底线更严的部分仍然有效。
 
