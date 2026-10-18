@@ -20,6 +20,7 @@ Claude Max 与 Master 共用额度。
 | 编码、测试、脚本        | `opencode-go/deepseek-v4.1-flash` → `opencode-go/glm-5.3-flash` → `gemini-3.8-flash-high`→ `claude-haiku-5-5` |
 | 看图              | `gemini-3.8-flash-high` → `claude-haiku-5-5`                                                                  |
 | 困难实现、高风险 Review | `claude-opus-5-5` → `claude-sonnet-5-5`                                                                                                |
+| 自主 Worker（AGENT.md R4.8，带设计） | `claude-sonnet-5-5` → `claude-opus-5-5`；与 Master 共用额度，只在能省 Master 注意力时用 |
 | 兜底              | `opencode-go/longcat-2.5-preview-free` → `opencode-go/beam-free` |
 
 Effort：`claude` 用 `--effort`；`gemini-3.8-flash-*` 写在 ID 后缀中；`opencode` 不传。

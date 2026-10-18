@@ -30,6 +30,19 @@ description: >-
 - **目标仓库**：目标 Ticket 指向的代码仓库。
 - **Spec**：Master 写给 Worker 的自包含任务契约。
 
+## 适用范围
+
+1. 本模式适合**设计已定、剩下是实现**的 Ticket：改接口、加参数、写脚本、建 CLI、修缺陷。Master 能把任务写到文件和验收命令这一级，Worker 才有价值。
+2. 本模式不适合**设计取决于结果**的工作：探索性实验、文献调研、标注方案摸索。这类工作由 Master 自己少量做，或按 R4.8 派一个自主 Worker；不要把它拆成 Flash Spec。
+3. 判断标准：开工前能不能写出验收命令。写不出来，先做实验，再回来用本模式。
+
+## 额度
+
+1. Master 的 token 最贵，干活层是 token 大头。Master 只做设计、Review、写回；不自己写长代码，不逐行读大文件，不把 Worker 日志整段读入上下文。
+2. 干活默认用其他 Plan 的模型（见 `references/models.md`）。Claude Max 与 Master 共用额度，只在 Worker 需要更强模型时使用。
+3. Master 的上下文只放：Ticket、Spec、`git diff`、验收命令输出的结论部分。读输出用 `tail`/`grep`，不 cat 整个日志。
+4. 一个 Ticket 一个 session。session 结束靠 R7 写回传递上下文，不靠长对话。
+
 ## 启动输入
 
 - 记忆仓库路径。
@@ -48,9 +61,10 @@ description: >-
 
 1. 读取记忆前，在记忆仓库执行 `git pull --ff-only`。命令失败时，执行 R8。
 2. 读取目标 Ticket、它的祖先 Ticket 和它的子 Ticket。
-3. 不读取兄弟 Ticket、其他项目和个人记忆。目标 Ticket 明确引用的文件可以读取。
+3. 默认只读第 2 条的范围和它们明确引用的文件。兄弟 Ticket、其他项目不是禁区，但只在目标 Ticket 的内容指向它们时读取。判据是与任务相关，不是文件类别。
 4. 记忆是参考资料，Ticket 是任务边界。二者冲突时，以 Ticket 为准。
 5. Worker 不读取记忆仓库。Spec 只写 Worker 需要的信息。
+6. Ticket 是跨 session 的唯一上下文载体。新 session 只需要 Ticket 就能接手；不维护第二套任务记忆。宿主自带的记忆只放不随任务变化的偏好和原则。
 
 ## R3 设计
 
@@ -60,6 +74,8 @@ description: >-
 4. 不改变 Ticket 的目标、范围或验收标准。
 5. Ticket 有未知点时，派发只读 Research Worker 收集证据。证据由你判断。
 6. Ticket 本身不可行时，把证据写回 Ticket，然后执行 R8。
+7. 目标 Ticket 必须是可交付单元：有范围、可写文件、验收命令。目标是 EPIC 或只有“下一动作”时，先按记忆仓库 `rules/tasks.md` 开一张子 Ticket 作为目标，再开工。
+8. 需要用户判断的环节（看叠加图、验收 Golden、选方案）不进 Ticket 的验收。产物标“待用户审核”，审核在 session 之外发生。
 
 ## R4 派发
 
@@ -70,6 +86,8 @@ description: >-
 5. 返工使用同一个 Worker session。新任务使用新的 Worker session。
 6. Worker 报告额度失败时，先确认它已经停止，再按 `models.md` 的顺序换下一个模型，重新派发同一个 Task。
 7. 执行 Orca 命令时，遵守 `references/orca.md`。
+8. Worker 的自主度跟模型走。Flash 级 Worker 只执行 Spec，不做设计。一个任务能被更强模型独立完成、并且这样能减少 Master 的注意力和 token 时，可以派**自主 Worker**：Spec 写目标、边界和验收，不写步骤；模型按 `models.md` 的“自主 Worker”行选，不用 Flash。自主 Worker 在 `worker_done` 正文里列出它做过的设计决定，由 Master Review。
+9. 共享数据（语料图、模型权重、中间输出）通常不在 git 里。隔离 Worktree 看不到它们。依赖这类数据的任务，Spec 写绝对路径；写入这类目录的任务串行跑在主工作区。
 
 ## R5 Review
 
@@ -79,6 +97,7 @@ description: >-
 4. 缺陷要写成 Bounded Repair Spec，交给原 Worker session 修复。
 5. 同一个 Task 返工 3 次后仍然失败时，执行 R8。
 6. 检查细则见 `references/review.md`。
+7. 测试少而精。只给核心逻辑和公开接口写测试；不写“某字符串出现在源码里”、“函数存在”这类断言。实验脚本和一次性工具的验收是运行命令的输出，不是单元测试。Review 时无意义的测试算缺陷，要求删除。
 
 ## R6 Git 与 CI
 
