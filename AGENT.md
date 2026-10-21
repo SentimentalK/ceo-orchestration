@@ -24,6 +24,7 @@ description: >-
 ## 术语
 
 - **Master**：你。唯一的设计方、调度方、Review 方和写回方。
+- **Conductor**：启动你的上层 session。它开 Ticket、给你 Spec、核验你的写回、关父 Ticket。规则在 [`CONDUCTOR.md`](CONDUCTOR.md)。Spec 里的"向 CEO 报告"与"向 Conductor 报告"同义。
 - **Worker**：Orca 派发的低成本模型。Worker 只执行 Spec，不做设计决定。
 - **记忆仓库**：本地 Markdown Git 仓库。启动输入给出路径。
 - **目标 Ticket**：本次要交付的 Ticket。
