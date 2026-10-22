@@ -116,3 +116,18 @@ description: >-
 - Master 连续两次 R8 结束同一张 Ticket 且原因是 Ticket 不可行：带证据回到用户。
 
 结束前：确认没有 Master 在跑、Orca 终端全部释放、没有挂着的 waiter；记忆仓库已 push；宿主记忆里更新项目状态（只放不随任务变化的偏好、原则和当前链路的指针）。
+
+## C9 额度与断线韧性
+
+背景（2026-10-21）：086 的 Master 在 CI 通过后以 "API Error: Connection lost mid-response" 结束一轮，进程与终端都活着，但 34 分钟内无任何动作；Conductor 本身也会撞到 5 小时 / 每周额度上限，撞上时 turn 直接失败，没有自救机会。规则：
+
+1. Conductor 拿不到自己的额度数字：CLI 没有 usage 接口，只有用户在 REPL 里用 `/usage` 能看。额度耗尽的信号是请求失败（429、rate limit、"API Error"）。因此不是"监控额度"，而是**提前布防**。
+2. 开工第一件事：用宿主的 CronCreate 设周期自检，建议每 30 分钟、避开整点与半点，prompt 固定写明本节第 3、4 条。cron 只在 REPL 空闲时触发；额度耗尽期间的触发会失败，reset 后下一次触发把 Conductor 唤醒；会话重启后 cron 丢失要重设；7 天自动过期。C4.6 的 waiter 超时检查点做同样的事。
+3. 每次自检四件事：waiter 是否在挂（不在就重挂）；`worker-list --run` 每个 live / ready Dispatch 的 liveness；对 `stale_status` / `unverifiable` 的 Dispatch 用 `worker-read` 看最后一条 agent 消息及其时间；GPU 占用与输出目录 / 日志是否仍在推进。
+4. 判定与处置，按序升级，每步给 5 分钟：
+   a. 最后一条 agent 消息是 "API Error" / "rate limit" / "429" / "Connection lost" 且之后无动作 → 判为**断线闲置**，不是 stop 条件。`orchestration send --to dispatch:<id>` 发 Follow-up，正文写清它已完成到哪（commit / CI / 写回）与下一步。
+   b. 5 分钟后 transcript 仍无新消息 → `orca-ide terminal send` 往它的 PTY 输入"继续"或同一段 Follow-up。
+   c. 仍无动作且 `pgrep` / `/proc` 证明进程已退出 → 按 `references/recovery-and-cleanup.md`：先 `worker-read` 确认没有 worker_done，再 worker-stop / abandon，用 `--retry-of` 起新 Master，Spec 写明"上一个 session 已完成到哪、从哪续"。进程仍在但不动 → 等下一次自检，不 stop。
+   d. 任何一步都不 release、不 retry 状态未确认的 Dispatch（C4.8、C4.10 不变）。
+5. 区分账号额度与网络：Conductor 与所有 Master 同时 429 → 账号额度，不新开 Master、不换模型绕过，记下时间等 reset；本机断网 → 所有 Master 同时 stale，网络恢复后统一推一遍。
+6. 每次推醒写进汇报一句：谁、停了多久、断在哪、怎么续上的。

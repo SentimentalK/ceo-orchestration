@@ -135,3 +135,8 @@ description: >-
 3. 输出最终报告：已完成项、证据、未完成项和原因。
 
 没有升级出口。不等待回复。
+
+## R9 断线续跑
+
+1. 你的上一轮若以 "API Error" / "rate limit" / "Connection lost" 结束，之后收到 Conductor 的 Follow-up（`check --terminal <你的 handle>` 可见）或终端输入"继续"，视为从断点继续：先 `git status` / `git log` 与 Ticket 写回核对已完成到哪，不重做已 commit 的工作，不重复发 worker_done。
+2. 长任务（训练、采集）前用 nohup 后台跑并落日志，使断线不杀任务；续跑时先看日志尾部确认任务状态再决定下一步。
