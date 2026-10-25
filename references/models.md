@@ -8,7 +8,8 @@
 | --- | --- | --- |
 | OpenCode Go | opencode | `opencode-go/*` |
 | Claude Max | claude | `claude-haiku-5-5`、`claude-sonnet-5-5`、`claude-opus-5-5` |
-| Antigravity Gemini | antigravity | `gemini-3.8-flash-*` |
+| Antigravity Gemini | antigravity | `gemini-3.8-flash-*`、`gemini-4-argon-*` |
+| Antigravity Claude（用户报告 2026-10-25：额度小，约 2 h 重置；走 Google 计划，不占 Claude Max） | antigravity（CLI `agy`） | `claude-opus-5-5-{low,medium,high}`、`claude-sonnet-5-5-{low,medium,high}` |
 
 一个 Plan 额度用完时，跳过该 Plan 的所有模型。
 Claude Max 与 Master 共用额度。
@@ -23,4 +24,4 @@ Claude Max 与 Master 共用额度。
 | 自主 Worker（AGENT.md R4.8，带设计） | `claude-sonnet-5-5` → `claude-opus-5-5`；与 Master 共用额度，只在能省 Master 注意力时用 |
 | 兜底              | `opencode-go/longcat-2.5-preview-free` → `opencode-go/beam-free` |
 
-Effort：`claude` 用 `--effort`；`gemini-3.8-flash-*` 写在 ID 后缀中；`opencode` 不传。
+Effort：`claude` 用 `--effort`；`agy` 的档位写在模型 ID 后缀中，print 模式必须 `-p='<prompt>'`（`-p` 后直接跟 flag 会把 flag 当 prompt），`--output-format json` 带 usage；`gemini-3.8-flash-*` 写在 ID 后缀中；`opencode` 不传。
