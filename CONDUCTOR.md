@@ -123,7 +123,7 @@ description: >-
 背景（2026-10-21）：086 的 Master 在 CI 通过后以 "API Error: Connection lost mid-response" 结束一轮，进程与终端都活着，但 34 分钟内无任何动作；Conductor 本身也会撞到 5 小时 / 每周额度上限，撞上时 turn 直接失败，没有自救机会。规则：
 
 1. Conductor 拿不到自己的额度数字：CLI 没有 usage 接口，只有用户在 REPL 里用 `/usage` 能看。额度耗尽的信号是请求失败（429、rate limit、"API Error"）。因此不是"监控额度"，而是**提前布防**。
-2. 开工第一件事：用宿主的 CronCreate 设周期自检，建议每 30 分钟、避开整点与半点，prompt 固定写明本节第 3、4 条。cron 只在 REPL 空闲时触发；额度耗尽期间的触发会失败，reset 后下一次触发把 Conductor 唤醒；会话重启后 cron 丢失要重设；7 天自动过期。C4.6 的 waiter 超时检查点做同样的事。
+2. （2026-10-25 起停用）原规则是开工即用 CronCreate 设 30 分钟周期自检。停用原因：用户观察到 Orca 在额度恢复后会自己触发唤醒，不再需要 cron 兜底；而且每次自检都要重读整段上下文，对话越长每次越贵。现在只靠 C4.6 的 waiter 超时检查点和 Orca 的额度恢复唤醒；本节第 3、4 条仍是每次检查点要做的事。
 3. 每次自检四件事：waiter 是否在挂（不在就重挂）；`worker-list --run` 每个 live / ready Dispatch 的 liveness；对 `stale_status` / `unverifiable` 的 Dispatch 用 `worker-read` 看最后一条 agent 消息及其时间；GPU 占用与输出目录 / 日志是否仍在推进。
 4. 判定与处置，按序升级，每步给 5 分钟：
    a. 最后一条 agent 消息是 "API Error" / "rate limit" / "429" / "Connection lost" 且之后无动作 → 判为**断线闲置**，不是 stop 条件。`orchestration send --to dispatch:<id>` 发 Follow-up，正文写清它已完成到哪（commit / CI / 写回）与下一步。
