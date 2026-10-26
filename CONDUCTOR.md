@@ -57,17 +57,18 @@ description: >-
 
 1. 一个 Master session 只给一张 Ticket，或同一张 Ticket 里互相依赖的一到两个波次。下一波等上一波写回核验后再起。
 2. Spec 固定七段：规则文件；启动输入；本 session 的范围（哪几波、子 Ticket 怎么开、写回到哪）；每波要点（目标、路线由谁定、验收数字、预算）；上游输入（先读哪些归档和报告）；环境说明（视为已授权）；收尾报告要求（worker_done 里必须列的项）。
-3. 环境说明要写明：主工作区还是 Worktree；用户未提交的无关改动豁免 `AGENT.md` R6.2 且不得触碰；中间产物放哪（不放 tmpfs 的 `/tmp`）；GPU 当前是否空闲；venv 路径；要不要 API key。
-4. 预算写具体数字：API 折算花费上限、GPU 小时上限、样本先量后放量的阶梯。
-5. 不在 Spec 里替 Master 选技术路线。可以列候选和判据，要求 Master 先做时间盒调研再选并写清成本与准确率。
-6. 验收场景不得用来调参。涉及门限、阈值的波次，Spec 明写"在独立集上标定，不在验收场景上调"。
-7. 规模 L 及以上、或要花 GPU 小时 / API 预算的波次，Spec 要求设计检查点：Master 开完子 Ticket、写完设计段后，用 preamble 的 `ask` 把设计要点（路线与理由、数据与比例、验收口径、预算）发给 Conductor，收到回复再开工。Conductor 在 waiter 收到 `question` 后立刻审，回复"同意"或"打回 + 要改的点"。S / M 规模、纯复验的波次可以免检查点。
+3. Spec 的"范围"段必须写一句：**Master 不自己写代码、不自己跑采集或检索；详细设计后派 Worker 实现，Master 只 Review 与集成**（AGENT.md 的分工）。用户 2026-10-25 看到 109 / 110 的 Master 自己起草清单、自己写 agy 封装，明确要求 Conductor 在 Spec 里把这条写死。
+4. 环境说明要写明：主工作区还是 Worktree；用户未提交的无关改动豁免 `AGENT.md` R6.2 且不得触碰；中间产物放哪（不放 tmpfs 的 `/tmp`）；GPU 当前是否空闲；venv 路径；要不要 API key。
+5. 预算写具体数字：API 折算花费上限、GPU 小时上限、样本先量后放量的阶梯。
+6. 不在 Spec 里替 Master 选技术路线。可以列候选和判据，要求 Master 先做时间盒调研再选并写清成本与准确率。
+7. 验收场景不得用来调参。涉及门限、阈值的波次，Spec 明写"在独立集上标定，不在验收场景上调"。
+8. 规模 L 及以上、或要花 GPU 小时 / API 预算的波次，Spec 要求设计检查点：Master 开完子 Ticket、写完设计段后，用 preamble 的 `ask` 把设计要点（路线与理由、数据与比例、验收口径、预算）发给 Conductor，收到回复再开工。Conductor 在 waiter 收到 `question` 后立刻审，回复"同意"或"打回 + 要改的点"。S / M 规模、纯复验的波次可以免检查点。
 
 ## C4 Orca
 
 1. 命令来源同 `references/orca.md`：Linux 上用 `orca-ide`，第一次执行前 `orca-ide skills get orchestration`。
 2. 一个项目一个 Run。`run-create` 时填 `--objective`，写明"Conductor run for <项目>：一张 Ticket 一个 Master"。
-3. 启动 Master：`orchestration worker-start --run <run> --spec "<Spec>" --worktree current --agent claude --model claude-opus-5-5 --json`。Spec 从文件读入，文件留在 scratchpad 以便复查。
+3. 启动 Master：`orchestration worker-start --run <run> --spec "<Spec>" --worktree current --agent claude --model claude-opus-5-5 --effort high --json`。显式给 `--effort high`：不给时 Orca 用自己的默认（可能是 xhigh），用户 2026-10-25 明确说 Master 不需要 xhigh。Spec 从文件读入，文件留在 scratchpad 以便复查。
 4. 依赖 git 外数据（权重、语料、输出目录）的 Master 跑在主工作区，同一时间只有一个 Master，避免共享 git index 冲突。
 5. 等待用后台 `check --run <run> --wait --types "worker_done,escalation,question" --timeout-ms 1500000 --json`。一个 Run 同时只允许一个 waiter；被 `waiter_exists` 拒绝说明旧 waiter 还在，不是故障。
 6. 超时和空结果是检查点。每次超时后重挂 waiter，顺手看一眼 Master 存活、GPU 占用、输出目录和两个仓库的最新 commit，向用户一句话汇报进度。
