@@ -57,6 +57,7 @@ description: >-
 
 1. 一个 Master session 只给一张 Ticket，或同一张 Ticket 里互相依赖的一到两个波次。下一波等上一波写回核验后再起。
 2. Spec 固定七段：规则文件；启动输入；本 session 的范围（哪几波、子 Ticket 怎么开、写回到哪）；每波要点（目标、路线由谁定、验收数字、预算）；上游输入（先读哪些归档和报告）；环境说明（视为已授权）；收尾报告要求（worker_done 里必须列的项）。
+3a. Spec 的"规则文件"段必须写一句：**heartbeat 最多每 30 分钟一次，或仅在 phase 变化时发；等 Worker 的循环里不要每轮都发。** 原因（用户 2026-10-28）：Orca 对每条未 ack 的消息都向 Conductor 推通知，心跳每几分钟一条就让 Conductor 每几分钟花一轮上下文；Conductor 的 waiter 只等 question / worker_done / escalation，心跳只用于存活判定，30 分钟足够（存活按 C4.8 以进程为准）。
 3. Spec 的"范围"段必须写一句：**Master 不自己写代码、不自己跑采集或检索；详细设计后派 Worker 实现，Master 只 Review 与集成**（AGENT.md 的分工）。用户 2026-10-25 看到 109 / 110 的 Master 自己起草清单、自己写 agy 封装，明确要求 Conductor 在 Spec 里把这条写死。
 4. 环境说明要写明：主工作区还是 Worktree；用户未提交的无关改动豁免 `AGENT.md` R6.2 且不得触碰；中间产物放哪（不放 tmpfs 的 `/tmp`）；GPU 当前是否空闲；venv 路径；要不要 API key。
 5. 预算写具体数字：API 折算花费上限、GPU 小时上限、样本先量后放量的阶梯。
