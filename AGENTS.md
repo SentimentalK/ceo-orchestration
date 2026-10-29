@@ -26,5 +26,7 @@
 | `references/` | Spec、Review、Orca 规则 | 是 |
 | `models.example.json` | 模型配置模板 | 是 |
 | `models.json` | 本机订阅与偏好（模型 ID、effort、坑）、agent 传参方式、派发顺序 | 否 |
+| `audit/` | 审计说明（`README.md`）和只读取数脚本；用户说"做 audit"时读 `audit/README.md` | 是 |
+| `audit/reports/` | 历次审计报告 | 否 |
 
 Worker 没有规则文件：它只读 Master 写的 Spec（模板在 `references/spec.md`）。
