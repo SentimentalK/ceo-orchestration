@@ -76,6 +76,8 @@ description: >-
 7. 心跳批次只 ack，不回复。手工 `check` 后用 `--ack <deliveryId>` 确认；ack 后确认 waiter 仍在，不在就重挂。
 8. liveness 为 `unverifiable` / `stale_status` 时按缺席处理：核实 Master 进程和终端是否存活（`worker-show`、`pgrep`），存活就继续等。不 stop、不 retry、不 release。
 9. Master 提问（`question`）时用 `reply --id <msgId>` 回答。设计检查点的提问按 C1.3 审设计后回复；其余提问只给边界和环境事实。回复后重挂 waiter。
+9a. Master 常用 `check --types worker_done,escalation,question` 等 Worker，会漏看 Conductor 的 `send`。每次 `send` 给 Master 之后，再用 `orca-ide terminal send --terminal <handle> --text "inbox 有 msg <id>，请不带 --types 读" --enter` 推一下；Spec 的规则段写"读 inbox 不带 --types"。（2026-10-28：113 与 115 的 Master 各漏看过一次。）
+9b. `--worktree current` 绑的是主仓库的 Orca 文件夹上下文，即使在 worktree 目录下执行也一样；要让 Master 在已有 worktree 里干活，起来后立刻 send + terminal 告诉它 `cd` 到 worktree 绝对路径做全部 git / 数据操作。新 worktree 用 `--worktree new-top-level --name <name>`。
 10. 只在 `worker_done` 经 C5 核验后 `worker-release --dispatch <ctx>`。结束前 `worker-list` 确认没有未释放的终端。
 
 ## C5 核验写回
