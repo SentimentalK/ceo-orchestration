@@ -23,6 +23,6 @@
 
 | 裁决 | 条件 | 动作 |
 | --- | --- | --- |
-| 通过 | 四项检查都有证据 | 集成，并按 AGENT.md R7 写回 |
+| 通过 | 四项检查都有证据 | 集成，并按 roles/master.md R7 写回 |
 | 返工 | 缺陷能在 Spec 范围内修复 | 写 Bounded Repair Spec，交给原 Worker session |
-| 结束 | 需要改变 Ticket，或返工达到上限 | 按 AGENT.md R8 结束 |
+| 结束 | 需要改变 Ticket，或返工达到上限 | 按 roles/master.md R8 结束 |

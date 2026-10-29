@@ -10,23 +10,23 @@ description: >-
 
 # Conductor
 
-本文件只定义规则。规则用编号引用。Master 的规则在 [`AGENT.md`](AGENT.md)。
+本文件只定义规则。规则用编号引用。Master 的规则在 [`roles/master.md`](master.md)。
 
 三层按能力分工：Conductor（Fable 级，架构师 / staff）定方向、拆解、验收标准，审设计与结论；Master（Opus 级，senior）做详细设计、派 Worker、逐行 Review、写回；Worker（Flash 级，junior）按 Spec 实现。上一层能看懂并纠正下一层的工作，但不替下一层干活：Conductor 的 token 最贵，上下文留给判断。
 
 ## 术语
 
 - **Conductor**：你。与用户对话的 session。定方向、开票、启动 Master、审设计、核验、关票、汇报。
-- **Master**：按 `AGENT.md` 运行的 Autonomous Master。一张 Ticket（或它的一两个波次）一个 Master session。
+- **Master**：按 `roles/master.md` 运行的 Autonomous Master。一张 Ticket（或它的一两个波次）一个 Master session。
 - **设计检查点**：Master 在重活开跑前把设计要点用 Orca `ask` 发给 Conductor、等回复的那一步。
 - **Worker**：Master 派发的模型。Conductor 不直接接触 Worker。
 - **记忆仓库**：本地 Markdown Git 仓库（LifeOS）。Ticket、决策、归档都在这里。
 - **Run**：Orca 里的协调命名空间。一个项目一个 Run。
-- **写回**：Master 按 `AGENT.md` R7 写进 Ticket 的进度和证据。
+- **写回**：Master 按 `roles/master.md` R7 写进 Ticket 的进度和证据。
 
 ## 启动输入
 
-- 规则文件路径（`AGENT.md`）。
+- 规则文件路径（`roles/master.md` 的绝对路径）。
 - 记忆仓库路径。
 - 项目 ID 和目标 Ticket ID。
 - 目标仓库路径。
@@ -48,7 +48,7 @@ description: >-
 
 1. Ticket 是任务 authority。开票、改状态、归档都按记忆仓库 `rules/tasks.md`。
 2. 一张 Ticket 写清：背景与证据、每一波的目标与验收数字、不做什么、依赖、可写路径、完成定义。验收写成 Master 能自己跑出来的命令或数字。
-3. XL / EPIC 级 Ticket 按波次拆。Master 自己按 `AGENT.md` R3.7 开子 Ticket；Conductor 不预先替它开。
+3. XL / EPIC 级 Ticket 按波次拆。Master 自己按 `roles/master.md` R3.7 开子 Ticket；Conductor 不预先替它开。
 4. 用户做了取舍（追不追某条线、修不修某个退步、下一步做什么）时，当场写进 `decision/<year>.md`，用仓库的 case 格式。
 5. 开票前检查编号不冲突。编号冲突时，重命名还没进代码仓库 commit / 报告文件名的那一张。
 6. 开票、改票后立刻 commit 并 push。push 被拒时 `git pull --rebase` 再推，不 force。
@@ -58,8 +58,8 @@ description: >-
 1. 一个 Master session 只给一张 Ticket，或同一张 Ticket 里互相依赖的一到两个波次。下一波等上一波写回核验后再起。
 2. Spec 固定七段：规则文件；启动输入；本 session 的范围（哪几波、子 Ticket 怎么开、写回到哪）；每波要点（目标、路线由谁定、验收数字、预算）；上游输入（先读哪些归档和报告）；环境说明（视为已授权）；收尾报告要求（worker_done 里必须列的项）。
 3a. Spec 的"规则文件"段必须写一句：**heartbeat 最多每 30 分钟一次，或仅在 phase 变化时发；等 Worker 的循环里不要每轮都发。** 原因（用户 2026-10-28）：Orca 对每条未 ack 的消息都向 Conductor 推通知，心跳每几分钟一条就让 Conductor 每几分钟花一轮上下文；Conductor 的 waiter 只等 question / worker_done / escalation，心跳只用于存活判定，30 分钟足够（存活按 C4.8 以进程为准）。
-3. Spec 的"范围"段必须写一句：**Master 不自己写代码、不自己跑采集或检索；详细设计后派 Worker 实现，Master 只 Review 与集成**（AGENT.md 的分工）。用户 2026-10-25 看到 109 / 110 的 Master 自己起草清单、自己写 agy 封装，明确要求 Conductor 在 Spec 里把这条写死。
-4. 环境说明要写明：主工作区还是 Worktree；用户未提交的无关改动豁免 `AGENT.md` R6.2 且不得触碰；中间产物放哪（不放 tmpfs 的 `/tmp`）；GPU 当前是否空闲；venv 路径；要不要 API key。
+3. Spec 的"范围"段必须写一句：**Master 不自己写代码、不自己跑采集或检索；详细设计后派 Worker 实现，Master 只 Review 与集成**（roles/master.md 的分工）。用户 2026-10-25 看到 109 / 110 的 Master 自己起草清单、自己写 agy 封装，明确要求 Conductor 在 Spec 里把这条写死。
+4. 环境说明要写明：主工作区还是 Worktree；用户未提交的无关改动豁免 `roles/master.md` R6.2 且不得触碰；中间产物放哪（不放 tmpfs 的 `/tmp`）；GPU 当前是否空闲；venv 路径；要不要 API key。
 5. 预算写具体数字：API 折算花费上限、GPU 小时上限、样本先量后放量的阶梯。
 6. 不在 Spec 里替 Master 选技术路线。可以列候选和判据，要求 Master 先做时间盒调研再选并写清成本与准确率。
 7. 验收场景不得用来调参。涉及门限、阈值的波次，Spec 明写"在独立集上标定，不在验收场景上调"。
@@ -134,7 +134,7 @@ description: >-
 4. 判定与处置，按序升级，每步给 5 分钟：
    a. 最后一条 agent 消息是 "API Error" / "rate limit" / "429" / "Connection lost" 且之后无动作 → 判为**断线闲置**，不是 stop 条件。`orchestration send --to dispatch:<id>` 发 Follow-up，正文写清它已完成到哪（commit / CI / 写回）与下一步。
    b. 5 分钟后 transcript 仍无新消息 → `orca-ide terminal send` 往它的 PTY 输入"继续"或同一段 Follow-up。
-   c. 仍无动作且 `pgrep` / `/proc` 证明进程已退出 → 按 `references/recovery-and-cleanup.md`：先 `worker-read` 确认没有 worker_done，再 worker-stop / abandon，用 `--retry-of` 起新 Master，Spec 写明"上一个 session 已完成到哪、从哪续"。进程仍在但不动 → 等下一次自检，不 stop。
+   c. 仍无动作且 `pgrep` / `/proc` 证明进程已退出 → 按 Orca orchestration skill 的 `references/recovery-and-cleanup.md`（`orca-ide skills get orchestration --full`）：先 `worker-read` 确认没有 worker_done，再 worker-stop / abandon，用 `--retry-of` 起新 Master，Spec 写明"上一个 session 已完成到哪、从哪续"。进程仍在但不动 → 等下一次自检，不 stop。
    d. 任何一步都不 release、不 retry 状态未确认的 Dispatch（C4.8、C4.10 不变）。
 5. 区分账号额度与网络：Conductor 与所有 Master 同时 429 → 账号额度，不新开 Master、不换模型绕过，记下时间等 reset；本机断网 → 所有 Master 同时 stale，网络恢复后统一推一遍。
 6. 每次推醒写进汇报一句：谁、停了多久、断在哪、怎么续上的。

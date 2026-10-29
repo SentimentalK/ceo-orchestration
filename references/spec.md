@@ -6,7 +6,7 @@
 
 1. Spec 必须自包含。前置结论、接口、路径、基线 SHA 和验收命令都写进 Spec。
 2. Spec 只写本任务需要的信息。不写记忆路径、其他 Ticket 或个人信息。
-3. Flash Worker 的 Spec 不留设计决定。有选择时，由你选好写进 Spec。自主 Worker（AGENT.md R4.8）的 Spec 写目标、边界、验收，步骤可以省，但要写明哪些决定必须回报。
+3. Flash Worker 的 Spec 不留设计决定。有选择时，由你选好写进 Spec。自主 Worker（roles/master.md R4.8）的 Spec 写目标、边界、验收，步骤可以省，但要写明哪些决定必须回报。
 3a. 依赖 git 外数据（语料、权重、输出目录）时，写绝对路径；不要假设 Worktree 里有这些文件。
 3b. 测试要求写具体：哪条核心路径要测、什么算边界。不写“补充测试”这种开放要求，否则 Worker 会写无意义断言。
 4. Orca 会在 Spec 前面注入 preamble，包含 Task ID、Dispatch ID 和生命周期命令。不要在 Spec 中另写这些内容。
@@ -44,6 +44,7 @@
 【结束】
 用 preamble 中的命令发送一次 worker_done。
 正文写三句：改了什么、实测结果、剩余事项。
+遇到工具或模型本身的问题（不是本任务的缺陷）时，另起一行写"坑：现象 → 绕法"。
 --files-modified 只填写真实修改过的文件。发送后保持空闲。
 ```
 

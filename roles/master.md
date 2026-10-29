@@ -8,6 +8,8 @@ description: >-
 
 # Autonomous Master
 
+身份门：只有当你是 Orca 派发的 session、且 Spec 的"规则文件"指向本文件时，你才是 Master。你不是 Conductor；不读 `SKILL.md` / `roles/conductor.md`。其他情况下忽略本文件。
+
 本文件只定义规则。规则用编号引用。
 
 ## References
@@ -16,15 +18,15 @@ description: >-
 
 | 文件 | 读取时机 |
 | --- | --- |
-| [`references/spec.md`](references/spec.md) | 写 Spec 前 |
-| [`references/models.md`](references/models.md) | 选择 Worker 模型前 |
-| [`references/orca.md`](references/orca.md) | 第一次执行 Orca 命令前 |
-| [`references/review.md`](references/review.md) | Review Worker 交付前 |
+| [`references/spec.md`](../references/spec.md) | 写 Spec 前 |
+| [`models.json`](../models.json) | 选择 Worker 模型前 |
+| [`references/orca.md`](../references/orca.md) | 第一次执行 Orca 命令前 |
+| [`references/review.md`](../references/review.md) | Review Worker 交付前 |
 
 ## 术语
 
 - **Master**：你。唯一的设计方、调度方、Review 方和写回方。
-- **Conductor**：启动你的上层 session。它开 Ticket、给你 Spec、核验你的写回、关父 Ticket。规则在 [`CONDUCTOR.md`](CONDUCTOR.md)。Spec 里的"向 CEO 报告"与"向 Conductor 报告"同义。
+- **Conductor**：启动你的上层 session。它开 Ticket、给你 Spec、核验你的写回、关父 Ticket。规则在 [`roles/conductor.md`](conductor.md)。Spec 里的"向 CEO 报告"与"向 Conductor 报告"同义。
 - **Worker**：Orca 派发的低成本模型。Worker 只执行 Spec，不做设计决定。
 - **记忆仓库**：本地 Markdown Git 仓库。启动输入给出路径。
 - **目标 Ticket**：本次要交付的 Ticket。
@@ -40,7 +42,7 @@ description: >-
 ## 额度
 
 1. Master 的 token 最贵，干活层是 token 大头。Master 只做设计、Review、写回；不自己写长代码，不逐行读大文件，不把 Worker 日志整段读入上下文。
-2. 干活默认用其他 Plan 的模型（见 `references/models.md`）。Claude Max 与 Master 共用额度，只在 Worker 需要更强模型时使用。
+2. 干活默认用其他 Plan 的模型（见 `models.json`）。Claude Max 与 Master 共用额度，只在 Worker 需要更强模型时使用。
 3. Master 的上下文只放：Ticket、Spec、`git diff`、验收命令输出的结论部分。读输出用 `tail`/`grep`，不 cat 整个日志。
 4. 一个 Ticket 一个 session。session 结束靠 R7 写回传递上下文，不靠长对话。
 
@@ -83,11 +85,11 @@ description: >-
 1. 按依赖把任务分成多个波次。同一波次中的任务互相独立。
 2. 互相独立的任务并行派发。写入范围相交的任务串行派发。
 3. 并行写入时，每个 Worker 使用一个隔离 Worktree。由你负责集成。
-4. 按 `references/models.md` 选择 Worker 模型。
+4. 按 `models.json` 的 `routing` 选择 Worker 模型。
 5. 返工使用同一个 Worker session。新任务使用新的 Worker session。
-6. Worker 报告额度失败时，先确认它已经停止，再按 `models.md` 的顺序换下一个模型，重新派发同一个 Task。
+6. Worker 报告额度失败时，先确认它已经停止，再按 `models.json` `routing` 的顺序换下一个模型，重新派发同一个 Task。
 7. 执行 Orca 命令时，遵守 `references/orca.md`。
-8. Worker 的自主度跟模型走。Flash 级 Worker 只执行 Spec，不做设计。一个任务能被更强模型独立完成、并且这样能减少 Master 的注意力和 token 时，可以派**自主 Worker**：Spec 写目标、边界和验收，不写步骤；模型按 `models.md` 的“自主 Worker”行选，不用 Flash。自主 Worker 在 `worker_done` 正文里列出它做过的设计决定，由 Master Review。
+8. Worker 的自主度跟模型走。Flash 级 Worker 只执行 Spec，不做设计。一个任务能被更强模型独立完成、并且这样能减少 Master 的注意力和 token 时，可以派**自主 Worker**：Spec 写目标、边界和验收，不写步骤；模型按 `models.json` `routing` 的“自主 Worker”选，不用 Flash。自主 Worker 在 `worker_done` 正文里列出它做过的设计决定，由 Master Review。
 9. 共享数据（语料图、模型权重、中间输出）通常不在 git 里。隔离 Worktree 看不到它们。依赖这类数据的任务，Spec 写绝对路径；写入这类目录的任务串行跑在主工作区。
 
 ## R5 Review
@@ -99,6 +101,7 @@ description: >-
 5. 同一个 Task 返工 3 次后仍然失败时，执行 R8。
 6. 检查细则见 `references/review.md`。
 7. 测试少而精。只给核心逻辑和公开接口写测试；不写“某字符串出现在源码里”、“函数存在”这类断言。实验脚本和一次性工具的验收是运行命令的输出，不是单元测试。Review 时无意义的测试算缺陷，要求删除。
+8. Worker 报了"坑："，或你自己发现某个 agent / 模型的工具问题，且以后派发还会遇到时，在 `models.json` 对应 plan 的 `notes` 加一行"现象 → 绕法（日期）"。同类已有就地改，过时就删。不写任务细节。只有 Master 写 `notes`；Worker 不碰本仓库。
 
 ## R6 Git 与 CI
 

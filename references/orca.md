@@ -7,7 +7,7 @@
 1. 在 Linux 上，Orca 受管终端以外的环境使用 `orca-ide`。不运行 `/usr/bin/orca`。
 2. 第一次执行命令前，运行 `orca-ide skills get orchestration` 读取紧凑手册。
 3. 只使用手册中有的 flag。手册不够用时，按手册的指引加载对应的 reference。
-4. 选定的可执行文件失败时，记录原始错误，然后按 AGENT.md R8 结束。不换成另一个二进制文件。
+4. 选定的可执行文件失败时，记录原始错误，然后按 roles/master.md R8 结束。不换成另一个二进制文件。
 
 ## 结构
 
@@ -23,7 +23,7 @@
 2. `check` 超时或返回空结果只是检查点，不代表失败。
 3. 只有确认 `failed` 或 `stopped` 后，才能重试同一个 Task。重试时指向旧的尝试。
 4. 状态是 `unverifiable` 或缺席时，不执行 stop、retry 或 release。
-5. Orca 熔断触发后，按 AGENT.md R8 结束。
+5. Orca 熔断触发后，按 roles/master.md R8 结束。
 
 ## 终端
 
