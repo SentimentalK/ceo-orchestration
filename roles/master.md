@@ -143,3 +143,10 @@ description: >-
 
 1. 你的上一轮若以 "API Error" / "rate limit" / "Connection lost" 结束，之后收到 Conductor 的 Follow-up（`check --terminal <你的 handle>` 可见）或终端输入"继续"，视为从断点继续：先 `git status` / `git log` 与 Ticket 写回核对已完成到哪，不重做已 commit 的工作，不重复发 worker_done。
 2. 长任务（训练、采集）前用 nohup 后台跑并落日志，使断线不杀任务；续跑时先看日志尾部确认任务状态再决定下一步。
+
+## R10 上下文交接
+
+1. 触发同 Conductor C10.1：被自动压缩过 ≥ 1 次（或估计 > 200k tokens）且时机安全（无改到一半的文件、自己的 commit 已 push、无未回复的 ask、自己派的 Worker 都已 worker_done 并 release、接下来是等待或新阶段）。
+2. 写交接文件（格式见 C10.2，放 Ticket 的 git 外目录），子票进度追加一行"交接：<路径>"。
+3. `send --type status --subject handoff_request` 给 Conductor，正文 = 交接文件绝对路径 + 当前在跑的后台任务（pid / 日志）。然后保持空闲，不再动手；Conductor 用 `--retry-of` 起新 Master，新 Master 接上后由 Conductor stop 你。
+4. 交接期间后台驱动 / 训练（nohup）照跑，不停。

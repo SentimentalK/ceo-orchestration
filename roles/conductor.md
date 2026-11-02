@@ -139,3 +139,14 @@ description: >-
    d. 任何一步都不 release、不 retry 状态未确认的 Dispatch（C4.8、C4.10 不变）。
 5. 区分账号额度与网络：Conductor 与所有 Master 同时 429 → 账号额度，不新开 Master、不换模型绕过，记下时间等 reset；本机断网 → 所有 Master 同时 stale，网络恢复后统一推一遍。
 6. 每次推醒写进汇报一句：谁、停了多久、断在哪、怎么续上的。
+
+## C10 上下文交接（换新 session）
+
+背景（2026-11-02，用户定）：PROJECT-123-C 的 Master 上下文压缩过一次后，每次被唤醒都要重读整段长上下文；当天周额度 18 个百分点里约一半是会话开销而非标注。长会话在适当的时候主动换成新 session，记忆靠交接文件，不靠旧对话。
+
+1. **触发（两条都满足）**：(a) 上下文过长——被自动压缩过 ≥ 1 次，或估计 > 200k tokens；(b) 时机安全——没有改到一半的文件 / 未 push 的自己的 commit / 未回复的 ask，自己派的 Worker 都已 release，接下来是等待或新阶段（不是正在排查中）。只满足 (a) 就先把手上这件事做完再换。
+2. **交接文件**（旧 session 写，放 Ticket 的 git 外目录或 scratchpad 以外的持久位置）：身份（Run / task / dispatch / handle）、硬约束原文要点、现状（数字 + 完整绝对路径）、进行中、怎么等、未完成（按顺序）、最终报告要求、坑。新 session 只读交接文件 + Ticket + 规则文件；旧 transcript 路径写进去但只许按需 grep。
+3. **Conductor 自己换**：写交接文件 → `orca-ide agent launch --agent claude --model claude-fable-5-1 --effort high --surface terminal --worktree <同一工作区> --prompt "你是 Conductor，读 <交接文件绝对路径> 接手"` → 新 session `run-use --id <run>`、读 inbox、重挂 waiter 成功后，send 一条 status 给旧 session（或旧 session 用 `terminal read` 看到新 session 已挂上 waiter）→ 旧 session 先停自己的 waiter，再由新 session `orca-ide terminal close --terminal <旧 handle>`。一个 Run 同时只许一个 waiter（C4.5），所以旧 waiter 必须在新 waiter 之前停掉；顺序：旧停 waiter → 新挂 waiter → 新关旧终端。
+4. **Master 换**：Master 按 R10 写交接文件并 send `handoff_request`（正文 = 交接文件路径）→ Conductor `worker-start --retry-of <旧 dispatch> --model claude-fable-5-1 --effort high --spec "<交接文件里的身份段 + 一句：读 <路径> 接手>"` → 新 Master 第一次 heartbeat（或 check 成功）后，Conductor `worker-stop --dispatch <旧>`（旧 Master 这时已空闲，没有在途工作）。不用 release 旧的去"迁移"任务；`--retry-of` 就是续跑同一 task 的正规路径（同 C9.4c）。
+5. 换完一句话告诉用户：谁换的、旧上下文多大、交接文件路径、新 session handle。
+6. 模型：新 session 用 Fable 5.1 high（周额度与 Opus 家族分开算）；Spec 里要求 Opus 的工作（例如设计检查点）照旧。
