@@ -80,6 +80,7 @@ description: >-
 9a. Master 常用 `check --types worker_done,escalation,question` 等 Worker，会漏看 Conductor 的 `send`。每次 `send` 给 Master 之后，再用 `orca-ide terminal send --terminal <handle> --text "inbox 有 msg <id>，请不带 --types 读" --enter` 推一下；Spec 的规则段写"读 inbox 不带 --types"。（2026-10-28：113 与 115 的 Master 各漏看过一次。）
 9b. `--worktree current` 绑的是主仓库的 Orca 文件夹上下文，即使在 worktree 目录下执行也一样；要让 Master 在已有 worktree 里干活，起来后立刻 send + terminal 告诉它 `cd` 到 worktree 绝对路径做全部 git / 数据操作。新 worktree 用 `--worktree new-top-level --name <name>`。
 10. 只在 `worker_done` 经 C5 核验后 `worker-release --dispatch <ctx>`。结束前 `worker-list` 确认没有未释放的终端。
+11. **Spec 里绝不让 Master 执行 `run-use`**（2026-11-03）：`run-use --id <run>` 把 Run 绑到执行者终端，Master 一跑，Conductor 的 waiter 立刻以 `consumer_fenced` 退出。Master 读 inbox 用不带 `--wait` / `--types` 的 `check --run <run>`，发消息用 `send --run <run> --to run:<run>` 或 Conductor 的 handle；遇到 `consumer_fenced` 报告而不是再 `run-use`。Conductor 恢复：重跑 `run-use` 再重挂 waiter。
 
 ## C5 核验写回
 
