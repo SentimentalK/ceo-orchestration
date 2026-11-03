@@ -150,3 +150,13 @@ description: >-
 2. 写交接文件（格式见 C10.2，放 Ticket 的 git 外目录），子票进度追加一行"交接：<路径>"。
 3. `send --type status --subject handoff_request` 给 Conductor，正文 = 交接文件绝对路径 + 当前在跑的后台任务（pid / 日志）。然后保持空闲，不再动手；Conductor 用 `--retry-of` 起新 Master，新 Master 接上后由 Conductor stop 你。
 4. 交接期间后台驱动 / 训练（nohup）照跑，不停。
+
+## R11 夜间休眠协议（用户声明"夜里机器要睡"时）
+
+背景（2026-11-03）：11-01→02 夜，Master 用 `rtcwake` 设了 RTC 闹钟，机器 08:00:03 自己醒、08:03 续跑；11-02→03 夜换了 Master，交接文件没写这一步，新 Master 用 `sleep` 等到 08:00，机器 00:06 挂起、08:42 被用户唤醒时脚本还在睡，续跑晚了 46 分钟。原因：`sleep` 走 CLOCK_MONOTONIC，机器挂起期间不计时；而且没有闹钟机器根本不会自己醒。本节只针对 Linux（systemd + RTC），Mac / Windows 未验证，不要照搬。
+
+1. **停**：到点或用户开口时优雅停——等进行中的 `claude -p` / 标注调用结束，在图与图之间停进程，写一个带原因的 STOP 文件（如 `night_user`），不杀进行中的调用。
+2. **让机器自己醒**：`sudo -n rtcwake -m no -t $(date -d 'tomorrow 08:00' +%s)`，然后 `cat /sys/class/rtc/rtc0/wakealarm` 核对等于目标 epoch。`-m no` 只设闹钟不挂起，挂起由用户自己做；闹钟可以提前设，无害。sudoers 只需放行 rtcwake。
+3. **续跑按墙钟**：一个每 60 秒比较 `date +%s` 与目标 epoch 的循环，到点删掉 `night_user` / 额度重试类 STOP 并重启；预算、QA 门、人工写的 STOP 不删，只报。**不要用一次长 `sleep`、`at`、`sleep until`**：它们在挂起期间不走。
+4. **写进交接文件和票**：机制（闹钟值、脚本路径、STOP 原因表）必须进 `master_handoff.md` 的"坑"段和 Ticket 的常设规则，不只写一行进度。11-02 的丢失就是只写了进度行。
+5. **为什么这样一定能起来**：RTC 闹钟由硬件时钟触发，不依赖操作系统在挂起期间运行；唤醒后墙钟循环在 60 秒内发现已过点并重启。剩余风险，Master 要在交接文件里写明：(a) 别的进程再调 rtcwake 会覆盖闹钟（设完核对，早上 Conductor 看 `journalctl -q | grep "PM: suspend exit"` 的时间）；(b) 机器被关机（S5）而非挂起时，部分主板不触发；(c) sudo 没放行 rtcwake 时退回"用户唤醒 + 墙钟循环"，并在 status 里说明。

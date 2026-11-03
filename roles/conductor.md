@@ -151,3 +151,10 @@ description: >-
 5. 换完一句话告诉用户：谁换的、旧上下文多大、交接文件路径、新 session handle。
 6. 模型：新 session 用 Fable 5.1 high（周额度与 Opus 家族分开算）；Spec 里要求 Opus 的工作（例如设计检查点）照旧。
 7. **Orca 实测（2026-11-02 19:50，123-C 首次交接）**：`--retry-of` 要求 `--task <旧 task>`（不能带 `--spec`），且旧 Dispatch 必须已 settled 为 failed / blocked；对一个仍 dispatched 的旧 Master 先 `worker-stop` 也不够（终端被用户接管过时 stop 返回 stop_unknown，任务变 blocked 但仍拒绝 retry）。可行路径：直接 `worker-start --spec "<身份段 + 读交接文件>" --worktree path:<worktree 绝对路径> --agent claude --model claude-fable-5-1 --effort high`，新 task 接手旧 task 的工作；旧 Master 的终端由 Conductor 在新 Master 第一次 heartbeat 后 `terminal close --terminal <旧 handle>`（一次只关一个，先确认不是自己）。顺序因此变为：先起新、确认接上、再关旧。
+
+## C11 夜间休眠（用户声明夜里机器要睡）
+
+1. 用户说"今天到这儿、睡机器"时：先让各 Master 按 `roles/master.md` R11 优雅停并设 RTC 闹钟，确认 `wakealarm` 值已回报，再 `systemctl suspend -i`（Orca 会挂一个 "Agents are working" 的 block inhibitor，`-i` 跳过）。
+2. Conductor 自己：停 waiter，不再重挂；用 CronCreate 一次性任务定早上的例行检查（它按墙钟触发，机器醒后若过点会补发）；告诉用户"若醒机 10 分钟内没见汇报就说一声 morning"。
+3. 早上例行：`journalctl -q | grep "PM: suspend exit"` 的时间对照驱动重启事件；没按时重启就按 R11 第 3 条让 Master 手动续并查原因。
+4. Spec 的"环境说明"段写一句："夜间机器会挂起，按 roles/master.md R11 处理，Linux 专用。" 交接文件（C10.2 / R10）必须带上当前闹钟值与脚本路径。
