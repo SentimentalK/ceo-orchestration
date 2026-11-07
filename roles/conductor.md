@@ -81,6 +81,7 @@ description: >-
 9b. `--worktree current` 绑的是主仓库的 Orca 文件夹上下文，即使在 worktree 目录下执行也一样；要让 Master 在已有 worktree 里干活，起来后立刻 send + terminal 告诉它 `cd` 到 worktree 绝对路径做全部 git / 数据操作。新 worktree 用 `--worktree new-top-level --name <name>`。
 10. 只在 `worker_done` 经 C5 核验后 `worker-release --dispatch <ctx>`。结束前 `worker-list` 确认没有未释放的终端。
 11. **Spec 里绝不让 Master 执行 `run-use`**（2026-11-03）：`run-use --id <run>` 把 Run 绑到执行者终端，Master 一跑，Conductor 的 waiter 立刻以 `consumer_fenced` 退出。Master 读 inbox 用不带 `--wait` / `--types` 的 `check --run <run>`，发消息用 `send --run <run> --to run:<run>` 或 Conductor 的 handle；遇到 `consumer_fenced` 报告而不是再 `run-use`。Conductor 恢复：重跑 `run-use` 再重挂 waiter。
+12. **每票固定 e2e 端口，避免复用别人的构建**（2026-11-07 实测）：并发跑票（主工作区 + worktree）时，Playwright 的 `reuseExistingServer` 会把别人的 dev server 当成自己的。AX 与 AY 并行时，AY 在 4888 上跑出 2 failed，换 4999 全绿——失败是端口冲突不是回归。规则：Spec 给每张票分配互不相同的 `PW_PORT`（如 AV=4888、AW=4990、AX=4991、AY=4992），file-persistence 仍固定 4173；跑全量前 `ss -ltnp | grep <port>` 确认未被占用，端口被占时换号重跑并在票里记一句。
 
 ## C5 核验写回
 
@@ -138,6 +139,8 @@ description: >-
    b. 5 分钟后 transcript 仍无新消息 → `orca-ide terminal send` 往它的 PTY 输入"继续"或同一段 Follow-up。
    c. 仍无动作且 `pgrep` / `/proc` 证明进程已退出 → 按 Orca orchestration skill 的 `references/recovery-and-cleanup.md`（`orca-ide skills get orchestration --full`）：先 `worker-read` 确认没有 worker_done，再 worker-stop / abandon，用 `--retry-of` 起新 Master，Spec 写明"上一个 session 已完成到哪、从哪续"。进程仍在但不动 → 等下一次自检，不 stop。
    d. 任何一步都不 release、不 retry 状态未确认的 Dispatch（C4.8、C4.10 不变）。
+   e. **`prefill_cap_refused`（2026-11-07 实测）**：Worker 的 transcript 静默、但终端状态行显示 `⎋ Working…`，此时用 `orca-ide terminal read --terminal <handle> --screen` 读**渲染帧**（默认 strip 模式看不到），能看到 `Error: 429 Upstream request failed: [prefill_cap_refused] the cell is at capacity; retry shortly (after 30 s) retry-after-ms=30000`。判定：上游单 cell 容量，不是账号额度（同一时刻 Conductor 自己的请求正常）。处置：只发一次 Follow-up（`orchestration send` **必须带 `--subject`**，缺了报 `Missing required --subject`），再用 `terminal send --text "inbox 有 msg <id>..." --enter` 入队；屏幕会出现 `Steering · 1`，但 429 退避期内**不会执行**——只是入队。`terminal send --interrupt`（1 字节）对此无效，不要反复推、不要重启。实测 18 分钟后自动恢复，队列里的消息直接被执行（本例 06:15 静默 → 06:40 恢复，直接接上跑 e2e）。
+   f. 判活看 `terminal read --screen`，不要只看 transcript：transcript 静默既可能是挂起，也可能只是 429 重试中。
 5. 区分账号额度与网络：Conductor 与所有 Master 同时 429 → 账号额度，不新开 Master、不换模型绕过，记下时间等 reset；本机断网 → 所有 Master 同时 stale，网络恢复后统一推一遍。
 6. 每次推醒写进汇报一句：谁、停了多久、断在哪、怎么续上的。
 
@@ -156,6 +159,21 @@ description: >-
 ## C11 夜间休眠（用户声明夜里机器要睡）
 
 1. 用户说"今天到这儿、睡机器"时：先让各 Master 按 `roles/master.md` R11 优雅停并设 RTC 闹钟，确认 `wakealarm` 值已回报，再 `systemctl suspend -i`（Orca 会挂一个 "Agents are working" 的 block inhibitor，`-i` 跳过）。
-2. Conductor 自己：停 waiter，不再重挂；用 CronCreate 一次性任务定早上的例行检查（它按墙钟触发，机器醒后若过点会补发）；告诉用户"若醒机 10 分钟内没见汇报就说一声 morning"。
-3. 早上例行：`journalctl -q | grep "PM: suspend exit"` 的时间对照驱动重启事件；没按时重启就按 R11 第 3 条让 Master 手动续并查原因。
-4. Spec 的"环境说明"段写一句："夜间机器会挂起，按 roles/master.md R11 处理，Linux 专用。" 交接文件（C10.2 / R10）必须带上当前闹钟值与脚本路径。
+2. Conductor 自己：停 waiter，不再重挂；**用 Orca automation 定早上自动续跑**（2026-11-07 实测有效；CronCreate 已不适用，见下）。命令模板：
+   ```
+   orca-ide automations create --name "<项目> Conductor resume" \
+     --trigger daily --time 08:05 --timezone America/New_York \
+     --workspace path:<主工作区绝对路径> --provider omp \
+     --extra-agent-args="--model <provider/model>" \
+     --missed-run-grace-minutes 240 --enabled --prompt "<读交接文件 + run-use <run> + 按顺序派票>" --json
+   ```
+   - `--missed-run-grace-minutes 240`：机器晚醒 4 小时内仍补跑一次（`missedRunPolicy=run_once_within_grace`）。
+   - 现有工作区用 `--workspace`；此时**不能带 `--setup`**（报 `--setup only applies to automations that create a new worktree per run`）。
+   - omp 的 extra args 只允许 `--model`；带 `--effort` 会被拒（`"--effort" isn't allowed in extra arguments for OMP`）。
+   - 不要用 `--reuse-session`：它复用 automation 自己的旧 session，不是当前这个 Conductor。
+   - 建完用 `automations show --id <id>` 核对 `rrule` / `nextRunAt` / `enabled`，用 `automations runs --id <id>` 看是否按点 dispatch。
+3. 醒来链路：RTC 08:00 唤醒 → automation 08:05 起新 Conductor（标题由 prompt 派生，`terminal list` 可见）→ 新 session `run-use` 会把旧 session 的 waiter 以 `consumer_fenced` 顶掉（正常，一个 Run 只允许一个 waiter）→ 新 session 读交接文件继续。旧 session 此后**不要再 `run-use`**，否则会反过来 fence 新 session。
+4. automation 是**每天**触发。只想要一次就 `automations edit --id <id> --disabled`；否则每天多起一个 Conductor，两个 session 抢同一个 Run。坑：`automations list` 里的 `id` 可能与 create 输出不同（重建/改名后变化），关闭时以 list 的 id 为准。
+5. 起 automation 前确认没有 live dispatch（`worker-list --run` 里非 `succeeded` 为 0）、两个仓库工作树干净；挂起会打断所有 Worker 会话。
+6. 早上例行：`journalctl -q | grep "PM: suspend exit"` 的时间对照驱动重启事件；没按时重启就按 R11 第 3 条让 Master 手动续并查原因。
+7. Spec 的"环境说明"段写一句："夜间机器会挂起，按 roles/master.md R11 处理，Linux 专用。" 交接文件（C10.2 / R10）必须带上当前闹钟值与脚本路径。

@@ -30,3 +30,18 @@
 1. 每个已结算的 Worker 终端只有三种去向：复用于返工、保留、释放。
 2. 只在结算被接受之后释放终端。
 3. 结束 session 前，清点并处置所有终端。
+
+## 定时与自动续跑（automations）
+
+1. `orca-ide automations create --name <name> --trigger daily --time 08:05 --timezone America/New_York --workspace path:<主工作区> --provider omp --extra-agent-args="--model opencode-go/deepseek-v4.1-flash" --missed-run-grace-minutes 240 --enabled --prompt "<读交接文件 + run-use <run> + 按顺序派票>" --json`。CronCreate 不可用；automation 是 Orca 自己的调度器，机器恢复时按墙钟补跑。
+2. 现有工作区模式**不能带 `--setup`**；omp 的 extra args 只接受 `--model`（`--effort` 被拒）。`--reuse-session` 复用 automation 自己的 session，不是当前 Conductor，不要用。
+3. `automations show --id <id>` 核对 `rrule` / `nextRunAt` / `enabled`；`automations runs --id <id>` 看每次 `scheduledFor` / `status`（`dispatched` 即已起 session）。`automations list` 的 id 才是关闭时用的 id（create 输出的 id 可能因重建而变）。
+4. 每天触发：只想要一次就 `automations edit --id <id> --disabled`，否则每天多一个 Conductor 抢同一个 Run。
+5. 新 Conductor 起来后会 `run-use`，把旧 session 的 waiter 以 `consumer_fenced` 顶掉——正常。旧 session 此后不再 `run-use`。
+6. 排查调度器：`orca-ide automations runs --id <id>` 的 `scheduledFor` 用 epoch 毫秒，直接和 RTC 闹钟 epoch 对照。
+
+## 判活与 429
+
+1. transcript 静默 ≠ 挂起。先 `terminal read --terminal <handle> --screen` 看渲染帧；默认模式 strip 掉 TUI 重绘，看不出错误。
+2. `prefill_cap_refused` / `retry-after-ms=30000` 是上游 cell 容量，不是账号额度；`send` + `terminal send` 只把消息入队（屏幕 `Steering · 1`），退避期内不执行，18 分钟内可自动恢复。`terminal send --interrupt` 无效；进程活着就不 stop / retry。
+3. `orchestration send` 必须带 `--subject`，否则 `Missing required --subject`。
