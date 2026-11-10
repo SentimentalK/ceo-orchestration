@@ -131,7 +131,7 @@ description: >-
 
 背景（2026-10-21）：086 的 Master 在 CI 通过后以 "API Error: Connection lost mid-response" 结束一轮，进程与终端都活着，但 34 分钟内无任何动作；Conductor 本身也会撞到 5 小时 / 每周额度上限，撞上时 turn 直接失败，没有自救机会。规则：
 
-1. Conductor 拿不到自己的额度数字：CLI 没有 usage 接口，只有用户在 REPL 里用 `/usage` 能看。额度耗尽的信号是请求失败（429、rate limit、"API Error"）。因此不是"监控额度"，而是**提前布防**。
+1. （2026-11-09 更正）额度数字可以自己读：`tools/usage.py`，读法和用法见 C12。读不到时（接口变了、token 过期）才退回问用户 `/usage`。额度耗尽的信号仍是请求失败（429、rate limit、"API Error"），所以布防照旧做。
 2. （2026-10-25 起停用）原规则是开工即用 CronCreate 设 30 分钟周期自检。停用原因：用户观察到 Orca 在额度恢复后会自己触发唤醒，不再需要 cron 兜底；而且每次自检都要重读整段上下文，对话越长每次越贵。现在只靠 C4.6 的 waiter 超时检查点和 Orca 的额度恢复唤醒；本节第 3、4 条仍是每次检查点要做的事。
 3. 每次自检四件事：waiter 是否在挂（不在就重挂）；`worker-list --run` 每个 live / ready Dispatch 的 liveness；对 `stale_status` / `unverifiable` 的 Dispatch 用 `worker-read` 看最后一条 agent 消息及其时间；GPU 占用与输出目录 / 日志是否仍在推进。
 4. 判定与处置，按序升级，每步给 5 分钟：
@@ -153,7 +153,7 @@ description: >-
 3. **Conductor 自己换**：写交接文件 → `orca-ide agent launch --agent claude --model claude-fable-5-1 --effort high --surface terminal --worktree <同一工作区> --prompt "你是 Conductor，读 <交接文件绝对路径> 接手"` → 新 session `run-use --id <run>`、读 inbox、重挂 waiter 成功后，send 一条 status 给旧 session（或旧 session 用 `terminal read` 看到新 session 已挂上 waiter）→ 旧 session 先停自己的 waiter，再由新 session `orca-ide terminal close --terminal <旧 handle>`。一个 Run 同时只许一个 waiter（C4.5），所以旧 waiter 必须在新 waiter 之前停掉；顺序：旧停 waiter → 新挂 waiter → 新关旧终端。
 4. **Master 换**：Master 按 R10 写交接文件并 send `handoff_request`（正文 = 交接文件路径）→ Conductor `worker-start --retry-of <旧 dispatch> --model claude-fable-5-1 --effort high --spec "<交接文件里的身份段 + 一句：读 <路径> 接手>"` → 新 Master 第一次 heartbeat（或 check 成功）后，Conductor `worker-stop --dispatch <旧>`（旧 Master 这时已空闲，没有在途工作）。不用 release 旧的去"迁移"任务；`--retry-of` 就是续跑同一 task 的正规路径（同 C9.4c）。
 5. 换完一句话告诉用户：谁换的、旧上下文多大、交接文件路径、新 session handle。
-6. 模型：新 session 用 Fable 5.1 high（周额度与 Opus 家族分开算）；Spec 里要求 Opus 的工作（例如设计检查点）照旧。
+6. 模型：（2026-11-08 更正）Fable 不是独立周池，只是共享周池里的子上限；Opus 更便宜。监督、等待为主的 session 用 Opus high，Spec 里要求更强模型的工作（例如设计检查点）照旧。
 7. **Orca 实测（2026-11-02 19:50，123-C 首次交接）**：`--retry-of` 要求 `--task <旧 task>`（不能带 `--spec`），且旧 Dispatch 必须已 settled 为 failed / blocked；对一个仍 dispatched 的旧 Master 先 `worker-stop` 也不够（终端被用户接管过时 stop 返回 stop_unknown，任务变 blocked 但仍拒绝 retry）。可行路径：直接 `worker-start --spec "<身份段 + 读交接文件>" --worktree path:<worktree 绝对路径> --agent claude --model claude-fable-5-1 --effort high`，新 task 接手旧 task 的工作；旧 Master 的终端由 Conductor 在新 Master 第一次 heartbeat 后 `terminal close --terminal <旧 handle>`（一次只关一个，先确认不是自己）。顺序因此变为：先起新、确认接上、再关旧。
 
 ## C11 夜间休眠（用户声明夜里机器要睡）
@@ -177,3 +177,37 @@ description: >-
 5. 起 automation 前确认没有 live dispatch（`worker-list --run` 里非 `succeeded` 为 0）、两个仓库工作树干净；挂起会打断所有 Worker 会话。
 6. 早上例行：`journalctl -q | grep "PM: suspend exit"` 的时间对照驱动重启事件；没按时重启就按 R11 第 3 条让 Master 手动续并查原因。
 7. Spec 的"环境说明"段写一句："夜间机器会挂起，按 roles/master.md R11 处理，Linux 专用。" 交接文件（C10.2 / R10）必须带上当前闹钟值与脚本路径。
+
+## C12 额度自查与长跑节奏（2026-11-09）
+
+背景：PROJECT-123-C W3 连续几天靠用户报 `/usage` 来调标注速度，用户觉得低效。11-09 实测找到 `/usage` 背后的接口，数字与用户看到的一致（5 h 38–41 %、周 33 %、Fable 1 %）。本节管两件事：怎么读，以及长时间跑的脚本（标注驱动、批量 `claude -p`、长训练的 AI 评估）怎么按额度控速。
+
+1. **读法**：`tools/usage.py` 输出一行（5 h %、重置时刻、周 %、重置时刻、Fable %）；`--json` 输出原始返回；`--log tools/usage_log.tsv` 同时追加一行，用于校准。原理：GET `https://api.anthropic.com/api/oauth/usage`，带 `anthropic-beta: oauth-2025-04-20` 和 Claude Code 自己存在 `~/.claude/.credentials.json` 的 OAuth access token。
+2. **凭据规则**：只读 token，不打印、不写进日志 / Spec / 票，也不自己刷新（刷新会轮换 refresh token，可能把用户的 Claude Code 登录踢掉）。401 = token 过期，等 Claude Code 下次运行时自己刷新，然后再读。接口没有公开文档，哪天变了就退回问用户，并在汇报里说一句。
+3. **什么时候读**（每次读都 `--log`）：
+   - 起付费批次 / 长跑之前；
+   - 每个 batch_done；
+   - 每次调速之前；
+   - 早上续跑之后；
+   - waiter 超时检查点（C9.3）。
+   
+   不要高频轮询，最短间隔 10 分钟。
+4. **两个窗口的事实**：
+   - 5 h 窗口从第一次使用开始计时，到 `resets_at` 整体清零，不是滚动窗口。所以脚本里的"滚动 5 h 计数"会在重置后误睡（11-08 实测）。控速要看 `resets_at`，不要自己数。
+   - 周窗口同理，按 `seven_day.resets_at`。
+   - Fable 是周池里的子上限（`limits[].kind == weekly_scoped`），单独看。
+   - 所有 Claude 用量共用这两个窗口：Conductor、Master、Worker、驱动里的 `claude -p`、用户自己的聊天。
+5. **管理目标（线）**：
+   - 5 h：到 `resets_at` 时用量 ≤ 85 %，给用户自己用留余量。
+   - 周：保留 ≥ 20 % 给用户；用户另给停线时按用户的（123-C：90 %）。
+   - 超线处置：5 h 超 85 % → 驱动降速或睡到 `resets_at`；周超停线 → 写可恢复 STOP，报用户，不换模型绕过。
+6. **控速公式**（每次读完算一次，写进 status）：
+   - 校准：用相邻两行 `usage_log.tsv` 的百分点差，除以同期驱动完成的张数（或调用数），得到"每张占 5 h 多少 %、占周多少 %"。会话开销也算在里面，这正是要的。
+   - 5 h 允许速率 = (85 − 当前 5 h %) ÷ 每张 5 h % ÷ 距 `resets_at` 的小时数。
+   - 周允许速率 = (停线 − 当前周 %) ÷ 每张周 % ÷ 剩余可跑小时数（扣掉夜间休眠）。
+   - 取两者较小值作为每小时上限。123-C 11-09 实测：一个 5 h 窗口满额约 340 张 Opus 标注；周额度约 3 张 / 1 %。
+7. **长跑脚本自己控速（推荐做法）**：
+   - 新写或大改的长跑驱动直接调 `tools/usage.py --json` 或同等代码，每 10–15 分钟读一次。5 h > 85 % 就睡到 `resets_at` + 1 分钟；周 ≥ 停线就写可恢复 STOP 并退出。不再用固定的"每小时 N 张 / 每 5 h M 张"上限。
+   - 读失败时退回保守的固定上限（如 40/h），并在事件日志记一行。
+   - 正在跑的驱动不为此中途重启，等批次边界。
+8. **汇报**：给用户报额度时写来源（"usage 接口 HH:MM 读数"），不再让用户去读 `/usage`。只有接口失效时才请用户读。

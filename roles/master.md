@@ -45,6 +45,7 @@ description: >-
 2. 干活默认用其他 Plan 的模型（见 `models.json`）。Claude Max 与 Master 共用额度，只在 Worker 需要更强模型时使用。
 3. Master 的上下文只放：Ticket、Spec、`git diff`、验收命令输出的结论部分。读输出用 `tail`/`grep`，不 cat 整个日志。
 4. 一个 Ticket 一个 session。session 结束靠 R7 写回传递上下文，不靠长对话。
+5. （2026-11-09）额度数字自己读：`~/codes/ceo-orchestration/tools/usage.py`（一行：5 h %、周 %、Fable %、重置时刻），规则见 conductor.md C12。长跑驱动按 C12.7 读额度自己控速，不要再写固定的滚动窗口计数。status 里报额度时写"usage 接口 HH:MM 读数"。
 
 ## 启动输入
 
