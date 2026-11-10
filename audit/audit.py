@@ -24,7 +24,7 @@ CLAUDE_DIR = HOME / ".claude/projects"
 OMP_DIR = HOME / ".omp/agent/sessions"
 CURSOR_DIR = HOME / ".cursor/chats"
 ID_RE = re.compile(rb"ctx_[0-9a-f]{12}")
-HEARTBEAT_MIN_GAP = 30  # roles/conductor.md C3.3a
+HEARTBEAT_MIN_GAP = 30  # roles/master.md R12.1
 LAUNCH_SLACK_S = 600
 
 
@@ -113,6 +113,18 @@ def load_orca(db_path, since, until):
         d["heartbeats"] = len(ts)
         d["median_heartbeat_gap_min"] = round(statistics.median(gaps), 1) if gaps else None
         d["questions"] = questions[d["dispatch_id"]]
+
+    # A Master that creates its own Run may restart depth at 1 there; place those below their coordinator.
+    handle_owner = {d["assignee_handle"]: d for d in dispatches if d["assignee_handle"]}
+    coordinators = {r["id"]: r["coordinator_handle"] for r in db.execute(
+        "select id, coordinator_handle from runs")}
+    for d in dispatches:
+        parent = handle_owner.get(coordinators.get(d["run_id"]))
+        if parent and parent is not d and d["depth"] <= parent["depth"]:
+            d["depth"] = parent["depth"] + 1
+            d["creator_dispatch_id"] = d["creator_dispatch_id"] or parent["dispatch_id"]
+            d["parent_run_id"] = parent["run_id"]
+            d["role"] = {1: "master", 2: "worker"}.get(d["depth"], "violation")
 
     unreleased = [dict(r) for r in db.execute(
         "select owner_dispatch_id, terminal_handle, release_state, ownership_state, retained_reason "
@@ -227,18 +239,20 @@ def attach_transcripts(dispatches, since):
         if path:
             owned.add(path)
 
-    # The Conductor is the unowned Claude session that saw a Master's Dispatch ID at launch time
-    # (worker-start output); later mentions, e.g. an audit session, do not count.
+    # The Conductor is the unowned session that saw a Master's Dispatch ID at launch time
+    # (worker-start output), Claude or omp; later mentions, e.g. an audit session, do not count.
     conductors = {}
     for m in (d for d in dispatches if d["role"] == "master"):
         launched = to_epoch(m["dispatched_at"])
-        for p in c_hits.get(m["dispatch_id"].encode(), []):
+        key = m["dispatch_id"].encode()
+        for p, reader in [(p, claude_usage) for p in c_hits.get(key, [])] + \
+                         [(p, omp_usage) for p in o_hits.get(key, [])]:
             if p in owned or p in conductors:
                 continue
             seen = first_mention(p, m["dispatch_id"])
             if seen is None or abs(seen - launched) > LAUNCH_SLACK_S:
                 continue
-            tokens, models = claude_usage(p)
+            tokens, models = reader(p)
             conductors[p] = {"run_id": m["run_id"], "transcript": str(p), "tokens": tokens,
                              "model_seen": models,
                              "note": "whole session; may include work outside this window"}
