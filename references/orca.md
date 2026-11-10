@@ -1,6 +1,6 @@
 # Orca
 
-执行 Orca 命令前，遵守本文件。
+执行 Orca 命令前，遵守本文件。本机遇到的其他 Orca 坑在 `models.json` 的 `orca_notes`。
 
 ## 命令来源
 
@@ -31,17 +31,29 @@
 2. 只在结算被接受之后释放终端。
 3. 结束 session 前，清点并处置所有终端。
 
-## 定时与自动续跑（automations）
+## 消息
 
-1. `orca-ide automations create --name <name> --trigger daily --time 08:05 --timezone America/New_York --workspace path:<主工作区> --provider omp --extra-agent-args="--model opencode-go/deepseek-v4.1-flash" --missed-run-grace-minutes 240 --enabled --prompt "<读交接文件 + run-use <run> + 按顺序派票>" --json`。CronCreate 不可用；automation 是 Orca 自己的调度器，机器恢复时按墙钟补跑。
-2. 现有工作区模式**不能带 `--setup`**；omp 的 extra args 只接受 `--model`（`--effort` 被拒）。`--reuse-session` 复用 automation 自己的 session，不是当前 Conductor，不要用。
-3. `automations show --id <id>` 核对 `rrule` / `nextRunAt` / `enabled`；`automations runs --id <id>` 看每次 `scheduledFor` / `status`（`dispatched` 即已起 session）。`automations list` 的 id 才是关闭时用的 id（create 输出的 id 可能因重建而变）。
-4. 每天触发：只想要一次就 `automations edit --id <id> --disabled`，否则每天多一个 Conductor 抢同一个 Run。
-5. 新 Conductor 起来后会 `run-use`，把旧 session 的 waiter 以 `consumer_fenced` 顶掉——正常。旧 session 此后不再 `run-use`。
-6. 排查调度器：`orca-ide automations runs --id <id>` 的 `scheduledFor` 用 epoch 毫秒，直接和 RTC 闹钟 epoch 对照。
+1. `send` 必须带 `--subject`。正文含反引号或 `$(...)` 时先写进文件，再 `--body "$(cat <文件>)"`。
+2. 给正在等 Worker 的 session 发 `send` 之后，再用 `terminal send --terminal <handle> --text "inbox 有 msg <id>，请不带 --types 读" --enter` 推一下；它的 `check --types` 会漏掉别的类型。
+3. `run-use --id <run>` 把 Run 绑到执行者的终端，原先的 waiter 会以 `consumer_fenced` 退出。只有该 Run 的协调者执行它。
+4. 被派发的 session 读自己的 inbox 用不带 `--run` 的 `check`；`ask` 也不带 `--run`。要派 Worker 时先 `run-create` 自己的 Run。
+5. `ask` 默认不阻塞，发完结束回合；要在同一回合拿到答案用 `ask --resume <msg_id> --wait`。
+6. 给已结算的 Worker `send` 会生成一个新的 follow-up Dispatch，返工用它。
+
+## Worktree
+
+1. `--worktree current` 绑的是主仓库的 Orca 文件夹上下文，在 worktree 目录下执行也一样。要让 session 在已有 worktree 里干活，用 `--worktree path:<绝对路径>`，或起来后让它 `cd` 到绝对路径做全部操作。
+2. 新 worktree 用 `--worktree new-top-level --name <name>`。它可能从旧 commit 建，也没有被 gitignore 的依赖目录：Spec 要求开工先对齐基线、装依赖。
+
+## 定时与自动续跑
+
+1. `automations create --name <name> --trigger daily --time <HH:MM> --timezone <时区> --workspace path:<主工作区> --provider <agent> --extra-agent-args="--model <模型>" --missed-run-grace-minutes <分钟> --enabled --prompt "<prompt>" --json`。agent 和模型按 `models.json` `routing` 的"续跑 Conductor"项。automation 是 Orca 自己的调度器，机器恢复后按墙钟在宽限期内补跑一次。
+2. 用现有工作区时不能带 `--setup`。`--reuse-session` 复用的是 automation 自己的旧 session，不是当前 session，不用它。
+3. 建完用 `automations show --id <id>` 核对 `rrule`、`nextRunAt`、`enabled`；`automations runs --id <id>` 看每次的 `scheduledFor`（epoch 毫秒）和 `status`。
+4. `daily` 每天都触发。只要一次就在用完后 `automations edit --id <id> --disabled`，id 以 `automations list` 里的为准。
 
 ## 判活与 429
 
-1. transcript 静默 ≠ 挂起。先 `terminal read --terminal <handle> --screen` 看渲染帧；默认模式 strip 掉 TUI 重绘，看不出错误。
-2. `prefill_cap_refused` / `retry-after-ms=30000` 是上游 cell 容量，不是账号额度；`send` + `terminal send` 只把消息入队（屏幕 `Steering · 1`），退避期内不执行，18 分钟内可自动恢复。`terminal send --interrupt` 无效；进程活着就不 stop / retry。
-3. `orchestration send` 必须带 `--subject`，否则 `Missing required --subject`。
+1. transcript 静默不等于挂起。用 `terminal read --terminal <handle> --screen` 看渲染帧；默认模式会去掉 TUI 重绘，看不到错误。
+2. 渲染帧里出现带 `retry-after` 的 429（如 `prefill_cap_refused`）是上游容量，不是账号额度。这时 `send` 和 `terminal send` 只把消息入队，退避结束后才执行；`terminal send --interrupt` 无效。
+3. `worker-read` 用 `--dispatch` 指定对象，用 `--limit <n>` 限制条数。

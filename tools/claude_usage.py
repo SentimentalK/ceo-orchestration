@@ -5,9 +5,9 @@ Uses the access token Claude Code keeps in ~/.claude/.credentials.json (read-onl
 printed, never refreshed here -- Claude Code refreshes it itself). Undocumented endpoint:
 if it changes, fall back to asking the user for /usage.
 
-  usage.py            one line: 5h %, reset time, weekly %, Fable %
-  usage.py --json     raw JSON
-  usage.py --log F    also append a TSV row to F (ts, 5h, week, fable, 5h_reset)
+  claude_usage.py            one line: 5h %, reset time, weekly %, Fable %
+  claude_usage.py --json     raw JSON
+  claude_usage.py --log F    also append a TSV row to F (ts, 5h, week, fable, 5h_reset)
 """
 import json, sys, urllib.request, datetime as dt
 

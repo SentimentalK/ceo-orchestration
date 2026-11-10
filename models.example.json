@@ -1,20 +1,34 @@
 {
-  "_doc": "复制为 models.json（不进 git）后按本机订阅修改。plans 是订阅与偏好：模型、effort、额度、坑；agents 只说明某个 Orca agent 怎么列模型、怎么传 effort。偏好跟 plan 走，换 agent 只改 plan.agent。effort 没写时用 default_effort；agent 传不了 effort 时照常派发，以该 agent 自己的默认运行。routing 是各用途的派发顺序（plan / model）。一个 plan 额度用完时跳过它的全部模型。精确 ID 用 agents.<agent>.list_models 查，不凭记忆写。",
+  "_doc": "复制为 models.json（不进 git）后按本机订阅修改。plans 是订阅与偏好：模型、effort、额度、坑；agents 说明每个 Orca agent 的差异：怎么列模型、怎么传 effort、额度怎么读、transcript 在哪；没有对应办法的写\"无\"。偏好跟 plan 走，换 agent 只改 plan.agent。effort 没写时用 default_effort；agent 传不了 effort 时照常派发，以该 agent 自己的默认运行。routing 是各角色、各用途的派发顺序（plan / model）。constraints 是选模型时必须遵守的限制。notes 只写该 plan 的 agent 或模型本身的坑，orca_notes 只写 Orca 命令的坑，格式都是\"现象 → 绕法\"；目标仓库的坑不写在这里。一个 plan 额度用完时跳过它的全部模型。精确 ID 用 agents.<agent>.list_models 查，不凭记忆写。",
   "default_effort": "high",
   "plans": {
     "<订阅名>": {
       "agent": "<Orca agent id，例如 cursor / omp / codex>",
       "quota": "<独立，或与谁共用>",
-      "models": [{ "id": "<精确模型 ID>" }, { "id": "<另一个 ID>", "effort": "<只在偏离 default_effort 时写>" }],
+      "models": [
+        {
+          "id": "<精确模型 ID>"
+        },
+        {
+          "id": "<另一个 ID>",
+          "effort": "<只在偏离 default_effort 时写>"
+        }
+      ],
       "notes": []
     },
     "Claude": {
       "agent": "claude",
       "quota": "与 Conductor / Master 共用，留余量",
       "models": [
-        { "id": "claude-opus-5-5" },
-        { "id": "claude-sonnet-5-5" },
-        { "id": "claude-haiku-5-5" }
+        {
+          "id": "claude-opus-5-5"
+        },
+        {
+          "id": "claude-sonnet-5-5"
+        },
+        {
+          "id": "claude-haiku-5-5"
+        }
       ],
       "notes": []
     }
@@ -22,21 +36,49 @@
   "agents": {
     "cursor": {
       "list_models": "cursor-agent --list-models",
-      "effort": "写进模型 ID 后缀：--model <id>-<effort>，例如 grok-4.7-high；不传 --effort"
+      "effort": "写进模型 ID 后缀：--model <id>-<effort>，例如 grok-4.7-high；不传 --effort",
+      "usage": "无",
+      "transcripts": "~/.cursor/chats/，本地没有 token 数"
     },
     "omp": {
       "list_models": "omp models <provider>",
-      "effort": "Orca 对 omp 只接受 --model，传不了 effort"
+      "effort": "Orca 对 omp 只接受 --model，传不了 effort",
+      "usage": "无；单次花费在 transcript 的 usage.cost 里",
+      "transcripts": "~/.omp/agent/sessions/<工作区>/<时间>_<id>.jsonl"
     },
     "claude": {
       "list_models": "固定 ID：claude-opus-5-5 / claude-sonnet-5-5 / claude-haiku-5-5",
-      "effort": "--model <id> --effort <effort>"
+      "effort": "--model <id> --effort <effort>",
+      "usage": "tools/claude_usage.py，规则见 references/claude-usage.md",
+      "transcripts": "~/.claude/projects/<工作区>/<session>.jsonl"
     }
   },
+  "constraints": [
+    "<例：私有仓库只用某些订阅的模型>"
+  ],
   "routing": {
-    "编码、测试、脚本": ["<订阅名> / <精确模型 ID>", "Claude / claude-haiku-5-5"],
-    "看图": ["Claude / claude-sonnet-5-5"],
-    "困难实现、高风险 Review": ["Claude / claude-opus-5-5"],
-    "自主 Worker": ["Claude / claude-sonnet-5-5"]
-  }
+    "Conductor": [
+      "Claude / <最强的模型 ID>"
+    ],
+    "续跑 Conductor": [
+      "Claude / claude-opus-5-5"
+    ],
+    "Master": [
+      "Claude / claude-opus-5-5"
+    ],
+    "编码、测试、脚本": [
+      "<订阅名> / <精确模型 ID>",
+      "Claude / claude-haiku-5-5"
+    ],
+    "看图": [
+      "Claude / claude-sonnet-5-5"
+    ],
+    "困难实现、高风险 Review": [
+      "Claude / claude-opus-5-5"
+    ],
+    "自主 Worker": [
+      "Claude / claude-sonnet-5-5"
+    ]
+  },
+  "orca_notes": []
 }

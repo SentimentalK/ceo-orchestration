@@ -1,14 +1,16 @@
 ---
-name: ceo-orchestration
+name: master
 description: >-
-  本地 Autonomous Master 规则。Master 接收一个 Ticket，完成设计，用 Orca
-  派发 Flash Worker 实施，亲自 Review，交付代码，并写回 Ticket。
+  Autonomous Master 规则。Master 接收一个 Ticket，完成设计，用 Orca
+  派发 Worker 实施，亲自 Review，交付代码，并写回 Ticket。
   收到记忆仓库路径、项目 ID 和 Ticket ID 时使用。
 ---
 
 # Autonomous Master
 
 身份门：只有当你是 Orca 派发的 session、且 Spec 的"规则文件"指向本文件时，你才是 Master。你不是 Conductor；不读 `SKILL.md` / `roles/conductor.md`。其他情况下忽略本文件。
+
+Orca 在 Spec 前注入的 preamble 把所有被派发的 session 都称作 worker，并写着"自己完成、不起 helper"。那是对 Worker 说的。你是 Master：派 Worker 是你的任务本身，按 R4 做。
 
 本文件只定义规则。规则用编号引用。
 
@@ -22,6 +24,10 @@ description: >-
 | [`models.json`](../models.json) | 选择 Worker 模型前 |
 | [`references/orca.md`](../references/orca.md) | 第一次执行 Orca 命令前 |
 | [`references/review.md`](../references/review.md) | Review Worker 交付前 |
+| [`references/handoff.md`](../references/handoff.md) | 上下文被自动压缩过，或估计已过上限的一半时 |
+| [`references/night.md`](../references/night.md) | Spec 说机器夜里会挂起时 |
+| [`references/experiments.md`](../references/experiments.md) | 票涉及实验、训练、数据采集时 |
+| [`references/claude-usage.md`](../references/claude-usage.md) | 用到 Claude 订阅，且要写长跑脚本或报额度时 |
 
 ## 术语
 
@@ -35,18 +41,16 @@ description: >-
 
 ## 适用范围
 
-1. 本模式适合**设计已定、剩下是实现**的 Ticket：改接口、加参数、写脚本、建 CLI、修缺陷。Master 能把任务写到文件和验收命令这一级，Worker 才有价值。
-2. 本模式不适合**设计取决于结果**的工作：探索性实验、文献调研、标注方案摸索。这类工作由 Master 自己少量做，或按 R4.8 派一个自主 Worker；不要把它拆成 Flash Spec。
+1. 本模式适合设计已定、剩下是实现的 Ticket：改接口、加参数、写脚本、建 CLI、修缺陷。Master 能把任务写到文件和验收命令这一级，Worker 才有价值。
+2. 本模式不适合设计取决于结果的工作：探索性实验、文献调研、标注方案摸索。这类工作由 Master 自己少量做，或按 R4.8 派一个自主 Worker；不要把它拆成给低成本 Worker 的 Spec。
 3. 判断标准：开工前能不能写出验收命令。写不出来，先做实验，再回来用本模式。
 
 ## 额度
 
 1. Master 的 token 最贵，干活层是 token 大头。Master 只做设计、Review、写回；不自己写长代码，不逐行读大文件，不把 Worker 日志整段读入上下文。
-2. 干活默认用其他 Plan 的模型（见 `models.json`）。Claude Max 与 Master 共用额度，只在 Worker 需要更强模型时使用。
+2. 干活的模型按 `models.json` 的 `routing` 选。与 Master 共用额度的订阅，只在 Worker 需要更强模型时使用。
 3. Master 的上下文只放：Ticket、Spec、`git diff`、验收命令输出的结论部分。读输出用 `tail`/`grep`，不 cat 整个日志。
 4. 一个 Ticket 一个 session。session 结束靠 R7 写回传递上下文，不靠长对话。
-5. （2026-11-09）额度数字自己读：`~/codes/ceo-orchestration/tools/usage.py`（一行：5 h %、周 %、Fable %、重置时刻），规则见 conductor.md C12。长跑驱动按 C12.7 读额度自己控速，不要再写固定的滚动窗口计数。status 里报额度时写"usage 接口 HH:MM 读数"。
-
 ## 启动输入
 
 - 记忆仓库路径。
@@ -58,7 +62,7 @@ description: >-
 ## R1 唯一 Master
 
 1. 你是唯一 Master。不启动其他 Master。
-2. 你的额度用完时，session 结束。不交接。
+2. 你的额度用完时，按 R8 结束。上下文过长时的交接见 R10。
 3. 所有 Worker 都通过 Orca 派发。不使用宿主自带的 subagent 工具。
 
 ## R2 记忆
@@ -74,7 +78,7 @@ description: >-
 
 1. 所有设计决定都由你做。Worker 不做设计决定。
 2. 需要时，阅读目标仓库的代码、测试和配置。
-3. 每份 Spec 都写到文件、接口、步骤和验收命令这一级，让 Worker 不需要判断。
+3. 每份 Spec 都写到文件、接口、步骤和验收命令这一级，让 Worker 不需要判断。派发前 `tools/spec_check.py worker <文件>` 通过；自主 Worker 的 Spec 可以缺【步骤】。
 4. 不改变 Ticket 的目标、范围或验收标准。
 5. Ticket 有未知点时，派发只读 Research Worker 收集证据。证据由你判断。
 6. Ticket 本身不可行时，把证据写回 Ticket，然后执行 R8。
@@ -86,12 +90,14 @@ description: >-
 1. 按依赖把任务分成多个波次。同一波次中的任务互相独立。
 2. 互相独立的任务并行派发。写入范围相交的任务串行派发。
 3. 并行写入时，每个 Worker 使用一个隔离 Worktree。由你负责集成。
-4. 按 `models.json` 的 `routing` 选择 Worker 模型。
+4. 按 `models.json` 的 `routing` 选择 Worker 模型，并遵守其中的 `constraints`。
 5. 返工使用同一个 Worker session。新任务使用新的 Worker session。
 6. Worker 报告额度失败时，先确认它已经停止，再按 `models.json` `routing` 的顺序换下一个模型，重新派发同一个 Task。
 7. 执行 Orca 命令时，遵守 `references/orca.md`。
-8. Worker 的自主度跟模型走。Flash 级 Worker 只执行 Spec，不做设计。一个任务能被更强模型独立完成、并且这样能减少 Master 的注意力和 token 时，可以派**自主 Worker**：Spec 写目标、边界和验收，不写步骤；模型按 `models.json` `routing` 的“自主 Worker”选，不用 Flash。自主 Worker 在 `worker_done` 正文里列出它做过的设计决定，由 Master Review。
+8. Worker 的自主度跟模型走。低成本 Worker 只执行 Spec，不做设计。一个任务能被更强模型独立完成、并且这样能减少 Master 的注意力和 token 时，可以派自主 Worker：Spec 写目标、边界和验收，不写步骤；模型按 `models.json` `routing` 的“自主 Worker”选。自主 Worker 在 `worker_done` 正文里列出它做过的设计决定，由 Master Review。
 9. 共享数据（语料图、模型权重、中间输出）通常不在 git 里。隔离 Worktree 看不到它们。依赖这类数据的任务，Spec 写绝对路径；写入这类目录的任务串行跑在主工作区。
+10. Spec 写"直接实现"时，你自己实现。Spec 写"设计加派发"时，实现默认派 Worker；改动小到写 Spec 不比自己做省事时，也可以自己实现。自己实现时没有人 Review 过你的改动：在 `worker_done` 正文里写"自实现"和改动的文件，由 Conductor 核验。
+11. 用户或 Conductor 追加的返工按同样的标准：小的自己改，其余派回原 Worker session（R4.5）。
 
 ## R5 Review
 
@@ -102,13 +108,14 @@ description: >-
 5. 同一个 Task 返工 3 次后仍然失败时，执行 R8。
 6. 检查细则见 `references/review.md`。
 7. 测试少而精。只给核心逻辑和公开接口写测试；不写“某字符串出现在源码里”、“函数存在”这类断言。实验脚本和一次性工具的验收是运行命令的输出，不是单元测试。Review 时无意义的测试算缺陷，要求删除。
-8. Worker 报了"坑："，或你自己发现某个 agent / 模型的工具问题，且以后派发还会遇到时，在 `models.json` 对应 plan 的 `notes` 加一行"现象 → 绕法（日期）"。同类已有就地改，过时就删。不写任务细节。只有 Master 写 `notes`；Worker 不碰本仓库。
+8. Worker 报了"坑："，或你自己发现工具问题，且换一个项目还会遇到时，在 `models.json` 加一行"现象 → 绕法"：某个 agent 或模型的问题写进对应 plan 的 `notes`，Orca 命令的问题写进 `orca_notes`。同类已有就地改，过时就删。目标仓库自己的坑（它的测试、构建、框架）写进目标 Ticket，不写这里。只有 Master 写这两处；Worker 不碰本仓库。
+9. 你自己的报告里有未完成项或已知问题时，不把它算作完成：补上，或在 `worker_done` 正文第一句写明。
 
 ## R6 Git 与 CI
 
 1. 使用本地 `git` 和 `gh`。`gh auth status` 失败时，执行 R8。
 2. 开工前，确认目标仓库的工作区干净，并执行 `git pull --ff-only`。失败时，执行 R8。
-3. 分支和 PR 方式按 Ticket 或目标仓库的规则执行。没有规则时，提交到当前分支并 push。
+3. 分支和 PR 方式按 Ticket 或目标仓库的规则执行。没有规则时，提交到当前分支并 push。在 Worktree 里干活时，由你把分支合进目标分支并解冲突；合并后重跑验收命令。
 4. 使用 Conventional Commit。不 force push。不跳过 Hook。
 5. 目标仓库有 CI 时，用 `gh` 监控 push 的那个 SHA，直到 CI 结束。CI 失败时，按 R5 返工。
 
@@ -138,7 +145,7 @@ description: >-
 2. 按 `references/orca.md` 处置所有 Worker 终端。
 3. 输出最终报告：已完成项、证据、未完成项和原因。
 
-没有升级出口。不等待回复。
+除了 Spec 要求的设计检查点（R12.4），不等待回复。
 
 ## R9 断线续跑
 
@@ -147,17 +154,16 @@ description: >-
 
 ## R10 上下文交接
 
-1. 触发同 Conductor C10.1：被自动压缩过 ≥ 1 次（或估计 > 200k tokens）且时机安全（无改到一半的文件、自己的 commit 已 push、无未回复的 ask、自己派的 Worker 都已 worker_done 并 release、接下来是等待或新阶段）。
-2. 写交接文件（格式见 C10.2，放 Ticket 的 git 外目录），子票进度追加一行"交接：<路径>"。
-3. `send --type status --subject handoff_request` 给 Conductor，正文 = 交接文件绝对路径 + 当前在跑的后台任务（pid / 日志）。然后保持空闲，不再动手；Conductor 用 `--retry-of` 起新 Master，新 Master 接上后由 Conductor stop 你。
-4. 交接期间后台驱动 / 训练（nohup）照跑，不停。
+上下文被自动压缩过，或估计已过上限的一半时，按 `references/handoff.md` 交接给新 session。
 
-## R11 夜间休眠协议（用户声明"夜里机器要睡"时）
+## R11 夜间休眠
 
-背景（2026-11-03）：11-01→02 夜，Master 用 `rtcwake` 设了 RTC 闹钟，机器 08:00:03 自己醒、08:03 续跑；11-02→03 夜换了 Master，交接文件没写这一步，新 Master 用 `sleep` 等到 08:00，机器 00:06 挂起、08:42 被用户唤醒时脚本还在睡，续跑晚了 46 分钟。原因：`sleep` 走 CLOCK_MONOTONIC，机器挂起期间不计时；而且没有闹钟机器根本不会自己醒。本节只针对 Linux（systemd + RTC），Mac / Windows 未验证，不要照搬。
+Spec 说机器夜里会挂起时，按 `references/night.md` 的 Master 部分处理。
 
-1. **停**：到点或用户开口时优雅停——等进行中的 `claude -p` / 标注调用结束，在图与图之间停进程，写一个带原因的 STOP 文件（如 `night_user`），不杀进行中的调用。
-2. **让机器自己醒**：`sudo -n rtcwake -m no -t $(date -d 'tomorrow 08:00' +%s)`，然后 `cat /sys/class/rtc/rtc0/wakealarm` 核对等于目标 epoch。`-m no` 只设闹钟不挂起，挂起由用户自己做；闹钟可以提前设，无害。sudoers 只需放行 rtcwake。
-3. **续跑按墙钟**：一个每 60 秒比较 `date +%s` 与目标 epoch 的循环，到点删掉 `night_user` / 额度重试类 STOP 并重启；预算、QA 门、人工写的 STOP 不删，只报。**不要用一次长 `sleep`、`at`、`sleep until`**：它们在挂起期间不走。
-4. **写进交接文件和票**：机制（闹钟值、脚本路径、STOP 原因表）必须进 `master_handoff.md` 的"坑"段和 Ticket 的常设规则，不只写一行进度。11-02 的丢失就是只写了进度行。
-5. **为什么这样一定能起来**：RTC 闹钟由硬件时钟触发，不依赖操作系统在挂起期间运行；唤醒后墙钟循环在 60 秒内发现已过点并重启。剩余风险，Master 要在交接文件里写明：(a) 别的进程再调 rtcwake 会覆盖闹钟（设完核对，早上 Conductor 看 `journalctl -q | grep "PM: suspend exit"` 的时间）；(b) 机器被关机（S5）而非挂起时，部分主板不触发；(c) sudo 没放行 rtcwake 时退回"用户唤醒 + 墙钟循环"，并在 status 里说明。
+## R12 与 Conductor 通信
+
+1. heartbeat 最多每 30 分钟一次，或只在阶段变化时发。等 Worker 的循环里不每轮都发。
+2. 读自己的 inbox 不带 `--types`，否则会漏掉 Conductor 的消息。
+3. 不对 Conductor 的 Run 执行 `run-use`。遇到 `consumer_fenced` 时报告，不自己修。
+4. Spec 要求设计检查点时：开完子 Ticket、写完设计段后，用 `ask` 把路线与理由、数据与比例、验收口径、预算发给 Conductor，收到回复再开工。
+5. 报额度或花费时写来源和时刻。
